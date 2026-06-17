@@ -190,11 +190,9 @@ export default function Home() {
         )}
       </div>
 
-      {/* FAB */}
       <button onClick={() => setForm("novo")}
         className="fixed bottom-24 right-1/2 z-40 flex h-14 w-14 translate-x-[170px] items-center justify-center rounded-full bg-indigo-600 text-3xl text-white shadow-lg shadow-indigo-300 transition active:scale-95">+</button>
 
-      {/* tab bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-slate-200 bg-white/90 py-3 backdrop-blur">
         <button onClick={() => setAba("hoje")} className={`flex-1 text-center text-xs font-medium ${aba === "hoje" ? "text-indigo-600" : "text-slate-400"}`}>
           <div className="text-lg">◴</div>Hoje

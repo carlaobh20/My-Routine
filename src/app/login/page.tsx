@@ -40,7 +40,7 @@ export default function Login() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-6">
-      <h1 className="text-2xl font-bold">Ritmo</h1>
+      <h1 className="text-2xl font-bold">My Routine</h1>
       <p className="text-sm text-slate-500">
         {modo === "criar" ? "Crie sua conta" : "Entre na sua conta"}
       </p>
