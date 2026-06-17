@@ -1,0 +1,7 @@
+Coloque aqui os ícones do PWA:
+  - icon-192.png  (192x192)
+  - icon-512.png  (512x512)
+  - badge.png     (96x96, monocromático, opcional)
+
+Sem ícone, o iOS usa um print da tela ao instalar — funciona, mas fica feio.
+Você pode gerar todos em https://realfavicongenerator.net ou pelo seu próprio design.

@@ -1,0 +1,21 @@
+# dependências
+/node_modules
+
+# build / next
+/.next
+/out
+/build
+
+# segredos — NUNCA commitar
+.env
+.env*.local
+.env.local
+.env.production
+
+# supabase local
+/supabase/.branches
+/supabase/.temp
+
+# sistema
+.DS_Store
+*.log
