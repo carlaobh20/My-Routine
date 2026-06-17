@@ -12,15 +12,34 @@ function dataLocal(d = new Date()) {
   const o = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return o.toISOString().slice(0, 10);
 }
-function hhmm(iso: string) {
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+// início da atividade aplicado ao dia de hoje (hora de hora_inicio, data de hoje)
+function inicioHoje(b: Bloco, base = new Date()) {
+  const t = new Date(b.hora_inicio);
+  const d = new Date(base);
+  d.setHours(t.getHours(), t.getMinutes(), 0, 0);
+  return d;
+}
+function hhmmDe(d: Date) {
+  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+// a atividade aparece no dia "base"?
+function apareceHoje(b: Bloco, base = new Date()) {
+  const hojeStr = dataLocal(base);
+  const wd = base.getDay();
+  if (!b.dias_semana || b.dias_semana.length === 0) {
+    return b.data === hojeStr; // só hoje (um dia)
+  }
+  if (!b.dias_semana.includes(wd)) return false;
+  if (b.data && b.data > hojeStr) return false;            // ainda não começou
+  if (b.validade_ate && b.validade_ate < hojeStr) return false; // já terminou
+  return true;
 }
 
 export default function Home() {
   const router = useRouter();
   const [carregando, setCarregando] = useState(true);
   const [agora, setAgora] = useState(new Date());
-  const [blocos, setBlocos] = useState<Bloco[]>([]);
+  const [todos, setTodos] = useState<Bloco[]>([]);
   const [execs, setExecs] = useState<Record<string, string>>({});
   const [aba, setAba] = useState<"hoje" | "meudia">("hoje");
   const [form, setForm] = useState<null | "novo" | Bloco>(null);
@@ -29,12 +48,13 @@ export default function Home() {
   async function carregar() {
     const supabase = criarClienteBrowser();
     const { data: bs } = await supabase
-      .from("blocks").select("id,titulo,hora_inicio,duracao_min,categoria,cor,gatilho,validade_tipo,validade_ate")
-      .eq("data", dataLocal()).order("hora_inicio");
-    const { data: es } = await supabase.from("executions").select("block_id,status");
+      .from("blocks")
+      .select("id,titulo,hora_inicio,duracao_min,categoria,cor,data,gatilho,validade_tipo,validade_ate,dias_semana");
+    const { data: es } = await supabase
+      .from("executions").select("block_id,status").eq("data", dataLocal());
     const mapa: Record<string, string> = {};
     (es ?? []).forEach((e: { block_id: string; status: string }) => { mapa[e.block_id] = e.status; });
-    setBlocos(bs ?? []);
+    setTodos(bs ?? []);
     setExecs(mapa);
   }
 
@@ -57,9 +77,15 @@ export default function Home() {
     if (!user) return;
     const minutos = status === "cumprido" ? min : status === "parcial" ? Math.round(min / 2) : 0;
     await supabase.from("executions").upsert(
-      { block_id: id, user_id: user.id, status, minutos_cumpridos: minutos }, { onConflict: "block_id" });
+      { block_id: id, user_id: user.id, status, minutos_cumpridos: minutos, data: dataLocal() },
+      { onConflict: "block_id,data" });
     carregar();
   }
+
+  const blocos = useMemo(
+    () => todos.filter((b) => apareceHoje(b, agora)).sort((a, b) => +inicioHoje(a, agora) - +inicioHoje(b, agora)),
+    [todos, agora],
+  );
 
   const resumo = useMemo(() => {
     const total = blocos.length;
@@ -70,10 +96,10 @@ export default function Home() {
     });
     const pct = total ? Math.round((pontos / total) * 100) : 0;
     const atual = blocos.find((b) => {
-      const i = new Date(b.hora_inicio); const f = new Date(i.getTime() + b.duracao_min * 60000);
+      const i = inicioHoje(b, agora); const f = new Date(i.getTime() + b.duracao_min * 60000);
       return agora >= i && agora < f;
     });
-    const proximo = blocos.find((b) => new Date(b.hora_inicio) > agora);
+    const proximo = blocos.find((b) => inicioHoje(b, agora) > agora);
     return { total, pct, atual, proximo };
   }, [blocos, execs, agora]);
 
@@ -84,6 +110,15 @@ export default function Home() {
   const dataExtenso = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   const relogio = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const R = 52, C = 2 * Math.PI * R;
+  const idxProximo = blocos.findIndex((b) => inicioHoje(b, agora) > agora);
+
+  const LinhaAgora = () => (
+    <div className="relative my-2 flex items-center gap-2 pl-[54px]">
+      <div className="h-2.5 w-2.5 rounded-full bg-red-500" />
+      <div className="h-0.5 flex-1 bg-red-500/60" />
+      <span className="text-[11px] font-bold text-red-500">AGORA {relogio}</span>
+    </div>
+  );
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
@@ -115,7 +150,7 @@ export default function Home() {
                 <div className="space-y-1">
                   <p className="text-sm text-slate-500">{resumo.total === 0 ? "Nenhum bloco hoje" : `${resumo.total} ${resumo.total === 1 ? "bloco" : "blocos"}`}</p>
                   {resumo.atual ? <p className="font-semibold text-slate-900">Agora: {resumo.atual.titulo}</p>
-                    : resumo.proximo ? <p className="font-semibold text-slate-900">Próximo: {resumo.proximo.titulo}<span className="block text-sm font-normal text-slate-500">às {hhmm(resumo.proximo.hora_inicio)}</span></p>
+                    : resumo.proximo ? <p className="font-semibold text-slate-900">Próximo: {resumo.proximo.titulo}<span className="block text-sm font-normal text-slate-500">às {hhmmDe(inicioHoje(resumo.proximo, agora))}</span></p>
                     : <p className="font-semibold text-slate-900">Dia livre ✨</p>}
                 </div>
               </div>
@@ -128,7 +163,7 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-400">Toque no + para montar sua rotina.</p>
                 </div>
               ) : blocos.map((b) => {
-                const i = new Date(b.hora_inicio); const f = new Date(i.getTime() + b.duracao_min * 60000);
+                const i = inicioHoje(b, agora); const f = new Date(i.getTime() + b.duracao_min * 60000);
                 const ativo = agora >= i && agora < f;
                 const restante = ativo ? Math.ceil((f.getTime() - agora.getTime()) / 60000) : null;
                 const status = execs[b.id]; const cor = b.cor || "#64748b";
@@ -139,7 +174,7 @@ export default function Home() {
                       <div className="flex-1 p-4">
                         <div className="flex items-start justify-between">
                           <div><p className="font-semibold text-slate-900">{b.titulo}</p>
-                            <p className="text-sm text-slate-500">{hhmm(b.hora_inicio)} · {b.duracao_min} min</p></div>
+                            <p className="text-sm text-slate-500">{hhmmDe(i)} · {b.duracao_min} min</p></div>
                           {ativo ? <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">faltam {restante} min</span>
                             : <button onClick={() => setForm(b)} className="text-slate-300 hover:text-slate-600">✎</button>}
                         </div>
@@ -166,24 +201,28 @@ export default function Home() {
             ) : (
               <div className="relative">
                 <div className="absolute bottom-2 left-[58px] top-2 w-0.5 bg-slate-200" />
-                {blocos.map((b) => {
-                  const i = new Date(b.hora_inicio); const f = new Date(i.getTime() + b.duracao_min * 60000);
+                {blocos.map((b, idx) => {
+                  const i = inicioHoje(b, agora); const f = new Date(i.getTime() + b.duracao_min * 60000);
                   const ativo = agora >= i && agora < f; const cor = b.cor || "#64748b";
                   return (
-                    <div key={b.id} className="relative mb-3 flex items-start gap-3">
-                      <div className="w-10 pt-3 text-right text-xs font-bold text-slate-500">{hhmm(b.hora_inicio)}</div>
-                      <div className="z-10 mt-4 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-white" style={{ backgroundColor: cor }} />
-                      <button onClick={() => setForm(b)} className="flex-1 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99]"
-                        style={ativo ? { border: "2px solid #4f46e5" } : { borderLeft: `4px solid ${cor}` }}>
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-900">{b.titulo}</span>
-                          {ativo ? <span className="text-xs font-bold text-indigo-600">agora</span> : <span className="text-slate-300">✎</span>}
-                        </div>
-                        <p className="text-xs text-slate-500">{b.duracao_min} min · {b.categoria}</p>
-                      </button>
+                    <div key={b.id}>
+                      {idx === idxProximo && <LinhaAgora />}
+                      <div className="relative mb-3 flex items-start gap-3">
+                        <div className="w-10 pt-3 text-right text-xs font-bold text-slate-500">{hhmmDe(i)}</div>
+                        <div className="z-10 mt-4 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-white" style={{ backgroundColor: cor }} />
+                        <button onClick={() => setForm(b)} className="flex-1 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99]"
+                          style={ativo ? { border: "2px solid #4f46e5" } : { borderLeft: `4px solid ${cor}` }}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-900">{b.titulo}</span>
+                            {ativo ? <span className="text-xs font-bold text-indigo-600">agora</span> : <span className="text-slate-300">✎</span>}
+                          </div>
+                          <p className="text-xs text-slate-500">{b.duracao_min} min · {b.categoria}</p>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
+                {idxProximo === -1 && <LinhaAgora />}
               </div>
             )}
           </section>

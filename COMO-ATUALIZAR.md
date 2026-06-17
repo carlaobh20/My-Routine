@@ -1,30 +1,30 @@
-# Como atualizar o projeto (substituir a pasta + push)
+# Como atualizar (substituir a pasta + push)
 
-Seu PowerShell local está atrasado (você editou no GitHub).
-Para religar tudo, SUBSTITUA o conteúdo da pasta por este e dê push.
-
-## 1. Rode o SQL no Supabase (uma vez)
-SQL Editor > New query > cole o conteúdo de:
-  supabase/migrations/0003_meu_dia.sql
-> Run. (É idempotente: seguro rodar mesmo que algumas colunas já existam.)
+## 1. Rode o SQL no Supabase (uma vez, nesta ordem)
+SQL Editor > New query > cole e Run, um de cada vez:
+  - supabase/migrations/0004_recorrencia.sql
+(O 0003 você já rodou. Todos são idempotentes — seguro rodar de novo.)
 
 ## 2. Substitua os arquivos locais
 1. Descompacte este zip.
-2. Copie TODO o conteúdo da pasta "ritmo" para dentro de C:\MEUS PROJETOS\myroutine,
-   substituindo os arquivos existentes (pode substituir tudo).
-   - NÃO copie node_modules nem .next (não vêm no zip).
-   - Mantenha o seu .env.local se tiver criado um (ele não vem no zip).
+2. Copie TODO o conteúdo da pasta "ritmo" para C:\MEUS PROJETOS\myroutine, substituindo.
+   - NÃO vem node_modules nem .next (são gerados sozinhos).
+   - Mantenha seu .env.local se tiver um.
 
-## 3. Suba pelo PowerShell
+## 3. Push pelo PowerShell
 cd "C:\MEUS PROJETOS\myroutine"
-git pull origin main          # traz o que está no GitHub e evita conflito
+git pull origin main
 git add .
-git commit -m "feat: abas Hoje e Meu dia, editar/validade, ajustes"
+git commit -m "feat: dias da semana (recorrencia) + linha do agora"
 git push
 
-A Vercel redeploya sozinha. Abra em aba anônima quando ficar Ready.
+## O que mudou nesta versão
+- Atividade pode repetir em dias da semana (atalho "Dias úteis" = seg a sex).
+- "Cumpri/Em parte" agora é registrado POR DIA (antes era uma vez por bloco).
+- Linha vermelha "AGORA" na aba Meu dia, mostrando onde você está no dia.
 
-## Observações honestas
-- A "validade" é GRAVADA mas ainda não REPETE a atividade sozinha (recorrência fica para depois).
-- O arquivo Timeline.tsx foi removido (virou parte da page.tsx).
-- O botão de notificações agora vive dentro do ícone de Ajustes (engrenagem, topo direito).
+## Honestidade
+- Recorrência: a atividade APARECE nos dias certos automaticamente. Não gera
+  cópias no banco — ela é mostrada quando o dia da semana bate. Isso é o certo.
+- Notificação automática nos dias recorrentes ainda depende do cron/Edge Function
+  que ainda não ligamos (Fase de notificação). Hoje a recorrência é visual + registro.
