@@ -1,4 +1,4 @@
-# dependências
+﻿# dependências
 /node_modules
 
 # build / next
@@ -11,10 +11,6 @@
 .env*.local
 .env.local
 .env.production
-
-# supabase local
-/supabase/.branches
-/supabase/.temp
 
 # sistema
 .DS_Store
