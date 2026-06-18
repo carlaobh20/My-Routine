@@ -142,12 +142,25 @@ export default function TaskForm({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <input type="time" value={hora} onChange={(e) => setHora(e.target.value)}
-            className="rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
-          <input type="number" min={5} step={5} value={duracao} onChange={(e) => setDuracao(Number(e.target.value))}
-            className="w-24 rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
-          <span className="text-sm text-slate-500">min</span>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Início</span>
+            <input type="time" value={hora} onChange={(e) => setHora(e.target.value)}
+              className="block rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Duração</span>
+            <span className="flex items-center gap-1">
+              <select value={Math.floor(duracao / 60)} onChange={(e) => setDuracao(Number(e.target.value) * 60 + (duracao % 60))}
+                className="rounded-xl border-0 bg-slate-50 px-3 py-3 focus:ring-2 focus:ring-indigo-400">
+                {Array.from({ length: 13 }, (_, n) => <option key={n} value={n}>{n}h</option>)}
+              </select>
+              <select value={duracao % 60} onChange={(e) => setDuracao(Math.floor(duracao / 60) * 60 + Number(e.target.value))}
+                className="rounded-xl border-0 bg-slate-50 px-3 py-3 focus:ring-2 focus:ring-indigo-400">
+                {[0, 5, 10, 15, 20, 30, 40, 45, 50].map((m) => <option key={m} value={m}>{m}min</option>)}
+              </select>
+            </span>
+          </label>
         </div>
 
         <div>

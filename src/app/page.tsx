@@ -82,7 +82,8 @@ export default function Home() {
   const [hist, setHist] = useState<ExecHist[]>([]);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [novoInbox, setNovoInbox] = useState("");
-  const [aba, setAba] = useState<"hoje" | "meudia" | "progresso">("hoje");
+  const [aba, setAba] = useState<"hoje" | "meudia" | "progresso" | "semana">("hoje");
+  const [semanaOffset, setSemanaOffset] = useState(0);
   const [form, setForm] = useState<null | "novo" | Bloco>(null);
   const [prefill, setPrefill] = useState<{ titulo: string; inboxId: string; hora?: string } | null>(null);
   const [ajustes, setAjustes] = useState(false);
@@ -142,6 +143,22 @@ export default function Home() {
     subs[idx] = { ...subs[idx], feito: !subs[idx].feito };
     const supabase = criarClienteBrowser();
     await supabase.from("blocks").update({ subtarefas: subs }).eq("id", b.id);
+    carregar();
+  }
+
+  async function toggleDiaCheck(b: Bloco, dia: Date) {
+    const ds = dataLocal(dia);
+    const supabase = criarClienteBrowser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const ex = hist.find((e) => e.block_id === b.id && e.data === ds);
+    if (ex && ex.status === "cumprido") {
+      await supabase.from("executions").delete().eq("block_id", b.id).eq("data", ds);
+    } else {
+      await supabase.from("executions").upsert(
+        { block_id: b.id, user_id: user.id, status: "cumprido", minutos_cumpridos: b.duracao_min, data: ds },
+        { onConflict: "block_id,data" });
+    }
     carregar();
   }
 
@@ -218,6 +235,42 @@ export default function Home() {
   }, [hist, todos]);
 
   const recorrentes = useMemo(() => todos.filter((b) => b.dias_semana && b.dias_semana.length > 0), [todos]);
+
+  const semana = useMemo(() => {
+    const base = new Date(); base.setDate(base.getDate() + semanaOffset * 7);
+    const dow = (base.getDay() + 6) % 7; // 0 = segunda
+    const monday = new Date(base); monday.setDate(base.getDate() - dow); monday.setHours(0, 0, 0, 0);
+    return Array.from({ length: 7 }, (_, k) => { const d = new Date(monday); d.setDate(monday.getDate() + k); return d; });
+  }, [semanaOffset]);
+
+  const acompanhamento = useMemo(() => {
+    const hojeStr = dataLocal();
+    const linhas = todos
+      .filter((b) => semana.some((dia) => apareceEm(b, dia)))
+      .map((b) => {
+        const celulas = semana.map((dia) => {
+          const ds = dataLocal(dia);
+          if (!apareceEm(b, dia)) return { ds, dia, estado: "vazio" as const };
+          const ex = hist.find((e) => e.block_id === b.id && e.data === ds);
+          if (ex) return { ds, dia, estado: ex.status as "cumprido" | "parcial" | "nao" };
+          if (ds < hojeStr) return { ds, dia, estado: "falta" as const };
+          if (ds === hojeStr) return { ds, dia, estado: "pendente" as const };
+          return { ds, dia, estado: "futuro" as const };
+        });
+        const cont = (e: string) => celulas.filter((c) => c.estado === e).length;
+        const agendados = celulas.filter((c) => c.estado !== "vazio").length;
+        const feitas = cont("cumprido");
+        return {
+          bloco: b, celulas,
+          feitas, parciais: cont("parcial"), naos: cont("nao"), faltas: cont("falta"),
+          agendados,
+          adesao: agendados ? Math.round((feitas / agendados) * 100) : 0,
+        };
+      });
+    const totAgendados = linhas.reduce((s, l) => s + l.agendados, 0);
+    const totFeitas = linhas.reduce((s, l) => s + l.feitas, 0);
+    return { linhas, totAgendados, totFeitas, pct: totAgendados ? Math.round((totFeitas / totAgendados) * 100) : 0 };
+  }, [todos, hist, semana]);
 
   if (carregando) return <main className="flex min-h-screen items-center justify-center text-slate-400">Carregando…</main>;
 
@@ -497,6 +550,89 @@ export default function Home() {
             )}
           </>
         )}
+
+        {aba === "semana" && (
+          <>
+            <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+              <div className="mb-4 flex items-center justify-between">
+                <button onClick={() => setSemanaOffset((o) => o - 1)} className="rounded-lg bg-slate-50 px-3 py-1 text-slate-500">‹</button>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-slate-900">
+                    {semana[0].toLocaleDateString("pt-BR", { day: "numeric", month: "short" })} – {semana[6].toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}
+                  </p>
+                  <p className="text-xs text-slate-400">{semanaOffset === 0 ? "esta semana" : semanaOffset === -1 ? "semana passada" : ""}</p>
+                </div>
+                <button onClick={() => setSemanaOffset((o) => o + 1)} className="rounded-lg bg-slate-50 px-3 py-1 text-slate-500">›</button>
+              </div>
+
+              <div className="mb-4 flex items-center gap-4 rounded-2xl bg-indigo-50 p-4">
+                <span className="text-3xl font-bold text-indigo-700">{acompanhamento.pct}%</span>
+                <span className="text-sm text-indigo-900">{acompanhamento.totFeitas} de {acompanhamento.totAgendados} cumpridas na semana</span>
+              </div>
+
+              {acompanhamento.linhas.length === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-400">Nenhuma atividade nesta semana.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1 pl-[96px] text-[10px] font-semibold text-slate-400">
+                    {semana.map((d, k) => (
+                      <div key={k} className="flex-1 text-center">{["S", "T", "Q", "Q", "S", "S", "D"][k]}<br />{d.getDate()}</div>
+                    ))}
+                  </div>
+                  {acompanhamento.linhas.map((l) => (
+                    <div key={l.bloco.id} className="flex items-center gap-1">
+                      <div className="w-[92px] truncate pr-1 text-xs font-medium text-slate-700">{l.bloco.icone ? l.bloco.icone + " " : ""}{l.bloco.titulo}</div>
+                      {l.celulas.map((c, k) => {
+                        const cls =
+                          c.estado === "cumprido" ? "bg-emerald-500 text-white"
+                          : c.estado === "parcial" ? "bg-amber-400 text-white"
+                          : c.estado === "nao" ? "bg-slate-300 text-white"
+                          : c.estado === "falta" ? "bg-red-100 text-red-400"
+                          : c.estado === "pendente" ? "border border-dashed border-indigo-300 text-indigo-300"
+                          : c.estado === "futuro" ? "border border-slate-200 text-slate-300"
+                          : "opacity-0";
+                        const sym = c.estado === "cumprido" ? "✓" : c.estado === "parcial" ? "◐" : c.estado === "nao" ? "✕" : c.estado === "falta" ? "!" : "";
+                        const podeTocar = c.estado !== "vazio" && c.estado !== "futuro";
+                        return (
+                          <button key={k} disabled={!podeTocar}
+                            onClick={() => toggleDiaCheck(l.bloco, c.dia)}
+                            className={`flex h-8 flex-1 items-center justify-center rounded-md text-xs font-bold transition active:scale-90 ${cls}`}>
+                            {sym}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-3 text-[11px] text-slate-400">Toque numa célula para marcar/desmarcar como feita. ✓ feito · ◐ em parte · ✕ não · ! falta</p>
+            </section>
+
+            <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+              <h3 className="mb-3 text-sm font-semibold text-slate-600">Por atividade</h3>
+              {acompanhamento.linhas.length === 0 ? (
+                <p className="text-sm text-slate-400">Sem dados nesta semana.</p>
+              ) : (
+                <div className="space-y-3">
+                  {acompanhamento.linhas.map((l) => (
+                    <div key={l.bloco.id}>
+                      <div className="mb-1 flex items-center justify-between text-sm">
+                        <span className="text-slate-700">{l.bloco.icone ? l.bloco.icone + " " : ""}{l.bloco.titulo}</span>
+                        <span className="font-semibold text-slate-900">{l.adesao}%</span>
+                      </div>
+                      <div className="mb-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${l.adesao}%` }} />
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        ✓ {l.feitas} feitas · ◐ {l.parciais} · ✕ {l.naos} · ! {l.faltas} faltas · {l.agendados} agendadas
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
 
       <button onClick={() => setForm("novo")}
@@ -506,6 +642,7 @@ export default function Home() {
         <button onClick={() => setAba("hoje")} className={`flex-1 text-center text-xs font-medium ${aba === "hoje" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">◴</div>Hoje</button>
         <button onClick={() => setAba("meudia")} className={`flex-1 text-center text-xs font-medium ${aba === "meudia" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">▤</div>Meu dia</button>
         <button onClick={() => setAba("progresso")} className={`flex-1 text-center text-xs font-medium ${aba === "progresso" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">📈</div>Progresso</button>
+        <button onClick={() => setAba("semana")} className={`flex-1 text-center text-xs font-medium ${aba === "semana" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">📊</div>Acompanhar</button>
       </nav>
 
       {form && <TaskForm bloco={form === "novo" ? null : form} onFechar={() => setForm(null)} onSalvo={() => { setForm(null); carregar(); }} />}
