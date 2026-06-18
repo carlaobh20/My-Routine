@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { criarClienteBrowser } from "@/lib/supabase/client";
-import TaskForm, { BlocoEdit } from "@/components/TaskForm";
+import TaskForm, { BlocoEdit, Subtarefa } from "@/components/TaskForm";
 import PushManager from "@/components/PushManager";
 import FocusMode from "@/components/FocusMode";
 import ShutdownRitual from "@/components/ShutdownRitual";
@@ -11,6 +11,7 @@ import HorariosForm from "@/components/HorariosForm";
 
 type Bloco = BlocoEdit;
 type ExecHist = { block_id: string; status: string; data: string; minutos_cumpridos: number };
+type InboxItem = { id: string; texto: string };
 
 const CAT_COR: Record<string, string> = {
   Trabalho: "#4f46e5", Pessoal: "#059669", "Saúde": "#db2777", Estudo: "#d97706", Outro: "#64748b",
@@ -29,6 +30,14 @@ function inicioHoje(b: Bloco, base = new Date()) {
 function hhmmDe(d: Date) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
+function paraData(hhmm: string, base = new Date()) {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date(base); d.setHours(h, m, 0, 0); return d;
+}
+function fmtDur(min: number) {
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  return h > 0 ? `${h}h${m > 0 ? " " + m + "min" : ""}` : `${m}min`;
+}
 function apareceEm(b: Bloco, base: Date) {
   const ds = dataLocal(base);
   const wd = base.getDay();
@@ -40,8 +49,7 @@ function apareceEm(b: Bloco, base: Date) {
 }
 function calcStreak(b: Bloco, feitos: Set<string>) {
   if (!b.dias_semana || b.dias_semana.length === 0) return { atual: 0, recorde: 0 };
-  const hoje = new Date();
-  const hojeStr = dataLocal(hoje);
+  const hoje = new Date(); const hojeStr = dataLocal(hoje);
   let atual = 0;
   for (let d = 0; d < 120; d++) {
     const dia = new Date(hoje); dia.setDate(hoje.getDate() - d);
@@ -49,7 +57,7 @@ function calcStreak(b: Bloco, feitos: Set<string>) {
     if (b.data && ds < b.data) break;
     if (!b.dias_semana.includes(dia.getDay())) continue;
     if (feitos.has(ds)) atual++;
-    else if (ds === hojeStr) continue; // hoje ainda não feito não quebra
+    else if (ds === hojeStr) continue;
     else break;
   }
   let recorde = 0, run = 0;
@@ -60,7 +68,7 @@ function calcStreak(b: Bloco, feitos: Set<string>) {
     if (b.data && ds < b.data) continue;
     if (!b.dias_semana.includes(dia.getDay())) continue;
     if (feitos.has(ds)) { run++; recorde = Math.max(recorde, run); }
-    else if (ds === hojeStr) { /* hoje pendente */ }
+    else if (ds === hojeStr) { /* pendente */ }
     else { run = 0; }
   }
   return { atual, recorde: Math.max(recorde, atual) };
@@ -72,8 +80,11 @@ export default function Home() {
   const [agora, setAgora] = useState(new Date());
   const [todos, setTodos] = useState<Bloco[]>([]);
   const [hist, setHist] = useState<ExecHist[]>([]);
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
+  const [novoInbox, setNovoInbox] = useState("");
   const [aba, setAba] = useState<"hoje" | "meudia" | "progresso">("hoje");
   const [form, setForm] = useState<null | "novo" | Bloco>(null);
+  const [prefill, setPrefill] = useState<{ titulo: string; inboxId: string; hora?: string } | null>(null);
   const [ajustes, setAjustes] = useState(false);
   const [foco, setFoco] = useState<Bloco | null>(null);
   const [encerrar, setEncerrar] = useState(false);
@@ -84,15 +95,15 @@ export default function Home() {
     const supabase = criarClienteBrowser();
     const { data: bs } = await supabase
       .from("blocks")
-      .select("id,titulo,hora_inicio,duracao_min,categoria,cor,data,gatilho,validade_tipo,validade_ate,dias_semana");
+      .select("id,titulo,hora_inicio,duracao_min,categoria,cor,data,gatilho,validade_tipo,validade_ate,dias_semana,icone,subtarefas");
     const desde = dataLocal(new Date(Date.now() - 120 * 86400000));
-    const { data: hs } = await supabase
-      .from("executions").select("block_id,status,data,minutos_cumpridos").gte("data", desde);
-    const { data: prof } = await supabase
-      .from("profiles").select("hora_acordar,hora_dormir").maybeSingle();
+    const { data: hs } = await supabase.from("executions").select("block_id,status,data,minutos_cumpridos").gte("data", desde);
+    const { data: prof } = await supabase.from("profiles").select("hora_acordar,hora_dormir").maybeSingle();
+    const { data: ib } = await supabase.from("inbox_items").select("id,texto").order("criado_em");
     setTodos(bs ?? []);
     setHist((hs ?? []) as ExecHist[]);
     setPerfil(prof ?? { hora_acordar: null, hora_dormir: null });
+    setInbox((ib ?? []) as InboxItem[]);
   }
 
   useEffect(() => {
@@ -123,6 +134,29 @@ export default function Home() {
     await supabase.from("executions").upsert(
       { block_id: id, user_id: user.id, status, minutos_cumpridos: minutos, data: dataLocal() },
       { onConflict: "block_id,data" });
+    carregar();
+  }
+
+  async function toggleSub(b: Bloco, idx: number) {
+    const subs: Subtarefa[] = [...(b.subtarefas || [])];
+    subs[idx] = { ...subs[idx], feito: !subs[idx].feito };
+    const supabase = criarClienteBrowser();
+    await supabase.from("blocks").update({ subtarefas: subs }).eq("id", b.id);
+    carregar();
+  }
+
+  async function addInbox() {
+    if (!novoInbox.trim()) return;
+    const supabase = criarClienteBrowser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("inbox_items").insert({ user_id: user.id, texto: novoInbox.trim() });
+    setNovoInbox("");
+    carregar();
+  }
+  async function removerInbox(id: string) {
+    const supabase = criarClienteBrowser();
+    await supabase.from("inbox_items").delete().eq("id", id);
     carregar();
   }
 
@@ -183,10 +217,7 @@ export default function Home() {
     return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   }, [hist, todos]);
 
-  const recorrentes = useMemo(
-    () => todos.filter((b) => b.dias_semana && b.dias_semana.length > 0),
-    [todos],
-  );
+  const recorrentes = useMemo(() => todos.filter((b) => b.dias_semana && b.dias_semana.length > 0), [todos]);
 
   if (carregando) return <main className="flex min-h-screen items-center justify-center text-slate-400">Carregando…</main>;
 
@@ -195,8 +226,14 @@ export default function Home() {
   const dataExtenso = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   const relogio = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const R = 52, C = 2 * Math.PI * R;
-  const idxProximo = blocos.findIndex((b) => inicioHoje(b, agora) > agora);
   const diaCheio = resumo.horasDia > 12;
+
+  // monta a agenda com âncoras, vazios e linha do agora
+  function abrirNoHorario(hhmm: string) {
+    setPrefill({ titulo: "", inboxId: "", hora: hhmm });
+  }
+  const wake = perfil?.hora_acordar ? paraData(perfil.hora_acordar, agora) : null;
+  const sleep = perfil?.hora_dormir ? paraData(perfil.hora_dormir, agora) : null;
 
   const LinhaAgora = () => (
     <div className="relative my-2 flex items-center gap-2 pl-[54px]">
@@ -205,6 +242,56 @@ export default function Home() {
       <span className="text-[11px] font-bold text-red-500">AGORA {relogio}</span>
     </div>
   );
+  const GapRow = ({ de, ate }: { de: Date; ate: Date }) => {
+    const min = Math.round((+ate - +de) / 60000);
+    const dentro = agora >= de && agora < ate;
+    return (
+      <div className="relative mb-3 pl-[54px]">
+        {dentro && <LinhaAgora />}
+        <button onClick={() => abrirNoHorario(hhmmDe(de))}
+          className="w-full rounded-xl border border-dashed border-slate-200 py-2 text-xs font-medium text-slate-400 transition hover:border-indigo-300 hover:text-indigo-600">
+          {fmtDur(min)} livre — + adicionar
+        </button>
+      </div>
+    );
+  };
+
+  const agendaItens: React.ReactNode[] = [];
+  if (blocos.length > 0) {
+    if (wake) agendaItens.push(
+      <div key="wake" className="relative mb-3 flex items-center gap-3">
+        <div className="w-10 text-right text-xs font-bold text-slate-400">{perfil!.hora_acordar}</div>
+        <div className="z-10 h-2.5 w-2.5 shrink-0 rounded-full bg-amber-300 ring-4 ring-white" />
+        <div className="flex-1 text-sm font-medium text-slate-400">🌅 Acordar</div>
+      </div>);
+    let cursor: Date | null = wake;
+    blocos.forEach((b) => {
+      const i = inicioHoje(b, agora); const f = new Date(i.getTime() + b.duracao_min * 60000);
+      if (cursor && +i - +cursor >= 20 * 60000) agendaItens.push(<GapRow key={"g" + b.id} de={cursor} ate={i} />);
+      const ativo = agora >= i && agora < f; const cor = b.cor || "#64748b";
+      agendaItens.push(
+        <div key={b.id} className="relative mb-3 flex items-start gap-3">
+          <div className="w-10 pt-3 text-right text-xs font-bold text-slate-500">{hhmmDe(i)}</div>
+          <div className="z-10 mt-4 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-white" style={{ backgroundColor: cor }} />
+          <button onClick={() => setForm(b)} className="flex-1 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99]"
+            style={ativo ? { border: "2px solid #4f46e5" } : { borderLeft: `4px solid ${cor}` }}>
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-900">{b.icone ? b.icone + " " : ""}{b.titulo}</span>
+              {ativo ? <span className="text-xs font-bold text-indigo-600">agora</span> : <span className="text-slate-300">✎</span>}
+            </div>
+            <p className="text-xs text-slate-500">{b.duracao_min} min · {b.categoria}</p>
+          </button>
+        </div>);
+      cursor = f;
+    });
+    if (cursor && sleep && +sleep - +cursor >= 20 * 60000) agendaItens.push(<GapRow key="gsleep" de={cursor} ate={sleep} />);
+    if (sleep) agendaItens.push(
+      <div key="sleep" className="relative flex items-center gap-3">
+        <div className="w-10 text-right text-xs font-bold text-slate-400">{perfil!.hora_dormir}</div>
+        <div className="z-10 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-300 ring-4 ring-white" />
+        <div className="flex-1 text-sm font-medium text-slate-400">🌙 Dormir</div>
+      </div>);
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
@@ -260,6 +347,7 @@ export default function Home() {
                 const restante = ativo ? Math.ceil((f.getTime() - agora.getTime()) / 60000) : null;
                 const status = execsHoje[b.id]; const cor = b.cor || "#64748b";
                 const st = calcStreak(b, feitosPorBloco[b.id] || new Set());
+                const subs = b.subtarefas || [];
                 return (
                   <div key={b.id} className={`overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition ${ativo ? "ring-2 ring-indigo-400" : "ring-slate-100"}`}>
                     <div className="flex">
@@ -267,12 +355,24 @@ export default function Home() {
                       <div className="flex-1 p-4">
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="font-semibold text-slate-900">{b.titulo}</p>
+                            <p className="font-semibold text-slate-900">{b.icone ? b.icone + " " : ""}{b.titulo}</p>
                             <p className="text-sm text-slate-500">{hhmmDe(i)} · {b.duracao_min} min {st.atual > 0 && <span className="ml-1 text-orange-500">🔥 {st.atual}</span>}</p>
                           </div>
                           {ativo ? <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">faltam {restante} min</span>
                             : <button onClick={() => setForm(b)} className="text-slate-300 hover:text-slate-600">✎</button>}
                         </div>
+
+                        {subs.length > 0 && (
+                          <div className="mt-3 space-y-1.5">
+                            {subs.map((s, idx) => (
+                              <button key={idx} onClick={() => toggleSub(b, idx)} className="flex w-full items-center gap-2 text-left text-sm">
+                                <span className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${s.feito ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-300"}`}>{s.feito ? "✓" : ""}</span>
+                                <span className={s.feito ? "text-slate-400 line-through" : "text-slate-600"}>{s.texto}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         {ativo && (
                           <button onClick={() => setFoco(b)} className="mt-3 w-full rounded-lg bg-indigo-50 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100">
                             ▶ Entrar em foco
@@ -293,6 +393,29 @@ export default function Home() {
               })}
             </section>
 
+            {/* Captura rápida (inbox) */}
+            <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+              <p className="mb-2 text-sm font-semibold text-slate-600">📥 Captura rápida</p>
+              <div className="flex gap-2">
+                <input value={novoInbox} onChange={(e) => setNovoInbox(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addInbox(); }}
+                  placeholder="Anote algo para encaixar depois…"
+                  className="flex-1 rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400" />
+                <button onClick={addInbox} className="rounded-lg bg-indigo-50 px-3 text-indigo-700">+</button>
+              </div>
+              {inbox.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {inbox.map((it) => (
+                    <div key={it.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                      <span className="flex-1 text-sm text-slate-700">{it.texto}</span>
+                      <button onClick={() => setPrefill({ titulo: it.texto, inboxId: it.id })} className="text-xs font-semibold text-indigo-600">Agendar</button>
+                      <button onClick={() => removerInbox(it.id)} className="text-slate-400">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
             {blocos.length > 0 && (
               <button onClick={() => setEncerrar(true)}
                 className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-slate-100">
@@ -310,42 +433,7 @@ export default function Home() {
             ) : (
               <div className="relative">
                 <div className="absolute bottom-2 left-[58px] top-2 w-0.5 bg-slate-200" />
-                {perfil?.hora_acordar && (
-                  <div className="relative mb-3 flex items-center gap-3">
-                    <div className="w-10 text-right text-xs font-bold text-slate-400">{perfil.hora_acordar}</div>
-                    <div className="z-10 h-2.5 w-2.5 shrink-0 rounded-full bg-amber-300 ring-4 ring-white" />
-                    <div className="flex-1 text-sm font-medium text-slate-400">🌅 Acordar</div>
-                  </div>
-                )}
-                {blocos.map((b, idx) => {
-                  const i = inicioHoje(b, agora); const f = new Date(i.getTime() + b.duracao_min * 60000);
-                  const ativo = agora >= i && agora < f; const cor = b.cor || "#64748b";
-                  return (
-                    <div key={b.id}>
-                      {idx === idxProximo && <LinhaAgora />}
-                      <div className="relative mb-3 flex items-start gap-3">
-                        <div className="w-10 pt-3 text-right text-xs font-bold text-slate-500">{hhmmDe(i)}</div>
-                        <div className="z-10 mt-4 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-white" style={{ backgroundColor: cor }} />
-                        <button onClick={() => setForm(b)} className="flex-1 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99]"
-                          style={ativo ? { border: "2px solid #4f46e5" } : { borderLeft: `4px solid ${cor}` }}>
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-slate-900">{b.titulo}</span>
-                            {ativo ? <span className="text-xs font-bold text-indigo-600">agora</span> : <span className="text-slate-300">✎</span>}
-                          </div>
-                          <p className="text-xs text-slate-500">{b.duracao_min} min · {b.categoria}</p>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {idxProximo === -1 && <LinhaAgora />}
-                {perfil?.hora_dormir && (
-                  <div className="relative flex items-center gap-3">
-                    <div className="w-10 text-right text-xs font-bold text-slate-400">{perfil.hora_dormir}</div>
-                    <div className="z-10 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-300 ring-4 ring-white" />
-                    <div className="flex-1 text-sm font-medium text-slate-400">🌙 Dormir</div>
-                  </div>
-                )}
+                {agendaItens}
               </div>
             )}
           </section>
@@ -355,10 +443,7 @@ export default function Home() {
           <>
             <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Nível</p>
-                  <p className="text-3xl font-bold text-slate-900">{nivel}</p>
-                </div>
+                <div><p className="text-sm text-slate-500">Nível</p><p className="text-3xl font-bold text-slate-900">{nivel}</p></div>
                 <p className="text-sm text-slate-400">{xpTotal} XP</p>
               </div>
               <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-100">
@@ -387,7 +472,7 @@ export default function Home() {
                     const st = calcStreak(b, feitosPorBloco[b.id] || new Set());
                     return (
                       <div key={b.id} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700">{b.titulo}</span>
+                        <span className="text-slate-700">{b.icone ? b.icone + " " : ""}{b.titulo}</span>
                         <span className="text-slate-500">🔥 {st.atual} <span className="text-slate-300">· recorde {st.recorde}</span></span>
                       </div>
                     );
@@ -418,28 +503,26 @@ export default function Home() {
         className="fixed bottom-24 right-1/2 z-40 flex h-14 w-14 translate-x-[170px] items-center justify-center rounded-full bg-indigo-600 text-3xl text-white shadow-lg shadow-indigo-300 transition active:scale-95">+</button>
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-slate-200 bg-white/90 py-3 backdrop-blur">
-        <button onClick={() => setAba("hoje")} className={`flex-1 text-center text-xs font-medium ${aba === "hoje" ? "text-indigo-600" : "text-slate-400"}`}>
-          <div className="text-lg">◴</div>Hoje
-        </button>
-        <button onClick={() => setAba("meudia")} className={`flex-1 text-center text-xs font-medium ${aba === "meudia" ? "text-indigo-600" : "text-slate-400"}`}>
-          <div className="text-lg">▤</div>Meu dia
-        </button>
-        <button onClick={() => setAba("progresso")} className={`flex-1 text-center text-xs font-medium ${aba === "progresso" ? "text-indigo-600" : "text-slate-400"}`}>
-          <div className="text-lg">📈</div>Progresso
-        </button>
+        <button onClick={() => setAba("hoje")} className={`flex-1 text-center text-xs font-medium ${aba === "hoje" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">◴</div>Hoje</button>
+        <button onClick={() => setAba("meudia")} className={`flex-1 text-center text-xs font-medium ${aba === "meudia" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">▤</div>Meu dia</button>
+        <button onClick={() => setAba("progresso")} className={`flex-1 text-center text-xs font-medium ${aba === "progresso" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">📈</div>Progresso</button>
       </nav>
 
       {form && <TaskForm bloco={form === "novo" ? null : form} onFechar={() => setForm(null)} onSalvo={() => { setForm(null); carregar(); }} />}
+      {prefill && (
+        <TaskForm
+          bloco={null}
+          tituloInicial={prefill.titulo}
+          horaInicial={prefill.hora}
+          onFechar={() => setPrefill(null)}
+          onSalvo={async () => { if (prefill.inboxId) await removerInbox(prefill.inboxId); setPrefill(null); carregar(); }}
+        />
+      )}
       {foco && <FocusMode titulo={foco.titulo} duracaoMin={foco.duracao_min} onFechar={() => setFoco(null)} />}
       {encerrar && <ShutdownRitual total={resumo.total} feitos={resumo.feitos} onFechar={() => setEncerrar(false)} />}
       {((perfil && (!perfil.hora_acordar || !perfil.hora_dormir)) || editarHorarios) && (
-        <HorariosForm
-          acordar={perfil?.hora_acordar || ""}
-          dormir={perfil?.hora_dormir || ""}
-          primeiraVez={!editarHorarios}
-          onFechar={() => setEditarHorarios(false)}
-          onSalvo={() => { setEditarHorarios(false); carregar(); }}
-        />
+        <HorariosForm acordar={perfil?.hora_acordar || ""} dormir={perfil?.hora_dormir || ""} primeiraVez={!editarHorarios}
+          onFechar={() => setEditarHorarios(false)} onSalvo={() => { setEditarHorarios(false); carregar(); }} />
       )}
 
       {ajustes && (
@@ -449,10 +532,7 @@ export default function Home() {
               <h2 className="text-lg font-bold text-slate-900">Ajustes</h2>
               <button onClick={() => setAjustes(false)} className="text-slate-400">✕</button>
             </div>
-            <div>
-              <p className="mb-2 text-sm font-semibold text-slate-600">Notificações</p>
-              <PushManager />
-            </div>
+            <div><p className="mb-2 text-sm font-semibold text-slate-600">Notificações</p><PushManager /></div>
             <div>
               <p className="mb-2 text-sm font-semibold text-slate-600">Seu dia</p>
               <button onClick={() => { setAjustes(false); setEditarHorarios(true); }}

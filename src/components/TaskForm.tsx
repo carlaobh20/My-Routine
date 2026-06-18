@@ -11,7 +11,8 @@ const CATEGORIAS = [
   { nome: "Outro", cor: "#64748b" },
 ];
 
-// 0=Dom ... 6=Sab (igual ao getDay() do JS)
+const ICONES = ["📖", "💼", "🏋️", "🧘", "🍽️", "💻", "📞", "🛒", "🚶", "🎯", "☕", "📝", "🙏", "🛏️", "🎨", "🎵"];
+
 const DIAS = [
   { i: 1, l: "Seg" }, { i: 2, l: "Ter" }, { i: 3, l: "Qua" },
   { i: 4, l: "Qui" }, { i: 5, l: "Sex" }, { i: 6, l: "Sáb" }, { i: 0, l: "Dom" },
@@ -19,11 +20,12 @@ const DIAS = [
 const UTEIS = [1, 2, 3, 4, 5];
 const TODOS = [0, 1, 2, 3, 4, 5, 6];
 
+export type Subtarefa = { texto: string; feito: boolean };
 export type BlocoEdit = {
   id: string; titulo: string; hora_inicio: string; duracao_min: number;
   categoria: string | null; cor: string | null; data?: string | null;
   gatilho?: string | null; validade_tipo?: string | null; validade_ate?: string | null;
-  dias_semana?: number[] | null;
+  dias_semana?: number[] | null; icone?: string | null; subtarefas?: Subtarefa[] | null;
 };
 
 function horaDeISO(iso: string) {
@@ -36,18 +38,24 @@ function dataLocal(d = new Date()) {
 }
 
 export default function TaskForm({
-  bloco, onFechar, onSalvo,
-}: { bloco?: BlocoEdit | null; onFechar: () => void; onSalvo: () => void }) {
+  bloco, tituloInicial, horaInicial, onFechar, onSalvo,
+}: {
+  bloco?: BlocoEdit | null; tituloInicial?: string; horaInicial?: string;
+  onFechar: () => void; onSalvo: () => void;
+}) {
   const edicao = !!bloco;
   const catInicial = CATEGORIAS.find((c) => c.nome === bloco?.categoria) || CATEGORIAS[0];
 
-  const [titulo, setTitulo] = useState(bloco?.titulo || "");
-  const [hora, setHora] = useState(bloco ? horaDeISO(bloco.hora_inicio) : "");
+  const [titulo, setTitulo] = useState(bloco?.titulo || tituloInicial || "");
+  const [hora, setHora] = useState(bloco ? horaDeISO(bloco.hora_inicio) : (horaInicial || ""));
   const [duracao, setDuracao] = useState(bloco?.duracao_min || 30);
   const [categoria, setCategoria] = useState(catInicial);
+  const [icone, setIcone] = useState(bloco?.icone || "");
   const [gatilho, setGatilho] = useState(bloco?.gatilho || "");
   const [dias, setDias] = useState<number[]>(bloco?.dias_semana || []);
   const [terminaEm, setTerminaEm] = useState(bloco?.validade_ate || "");
+  const [subs, setSubs] = useState<Subtarefa[]>(bloco?.subtarefas || []);
+  const [novaSub, setNovaSub] = useState("");
   const [salvando, setSalvando] = useState(false);
 
   const repete = dias.length > 0;
@@ -75,10 +83,12 @@ export default function TaskForm({
       duracao_min: duracao,
       categoria: categoria.nome,
       cor: categoria.cor,
+      icone: icone || null,
       gatilho: gatilho || null,
       dias_semana: repete ? dias : null,
       validade_tipo: !repete ? "hoje" : terminaEm ? "ate" : "sem",
       validade_ate: repete && terminaEm ? terminaEm : null,
+      subtarefas: subs,
       notificado: false,
     };
 
@@ -120,6 +130,18 @@ export default function TaskForm({
           ))}
         </div>
 
+        <div>
+          <p className="mb-2 text-sm font-semibold text-slate-600">Ícone</p>
+          <div className="flex flex-wrap gap-1.5">
+            {ICONES.map((e) => (
+              <button key={e} onClick={() => setIcone(icone === e ? "" : e)}
+                className={`h-10 w-10 rounded-xl text-lg transition ${icone === e ? "bg-indigo-100 ring-2 ring-indigo-400" : "bg-slate-50"}`}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
           <input type="time" value={hora} onChange={(e) => setHora(e.target.value)}
             className="rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
@@ -131,25 +153,14 @@ export default function TaskForm({
         <div>
           <p className="mb-2 text-sm font-semibold text-slate-600">Repete em</p>
           <div className="mb-2 flex flex-wrap gap-2">
-            <button onClick={() => setDias([])}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${!repete ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-              Só hoje
-            </button>
-            <button onClick={() => setDias(UTEIS)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${mesmoConjunto(dias, UTEIS) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-              Dias úteis
-            </button>
-            <button onClick={() => setDias(TODOS)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${mesmoConjunto(dias, TODOS) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-              Todos os dias
-            </button>
+            <button onClick={() => setDias([])} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${!repete ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>Só hoje</button>
+            <button onClick={() => setDias(UTEIS)} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${mesmoConjunto(dias, UTEIS) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>Dias úteis</button>
+            <button onClick={() => setDias(TODOS)} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${mesmoConjunto(dias, TODOS) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>Todos os dias</button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {DIAS.map((d) => (
               <button key={d.i} onClick={() => toggleDia(d.i)}
-                className={`h-9 w-11 rounded-lg text-xs font-semibold transition ${dias.includes(d.i) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-                {d.l}
-              </button>
+                className={`h-9 w-11 rounded-lg text-xs font-semibold transition ${dias.includes(d.i) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}>{d.l}</button>
             ))}
           </div>
           {repete && (
@@ -160,6 +171,26 @@ export default function TaskForm({
               {terminaEm && <button onClick={() => setTerminaEm("")} className="text-xs text-slate-400 underline">sem data</button>}
             </div>
           )}
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-slate-600">Subtarefas</p>
+          <div className="space-y-2">
+            {subs.map((s, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="flex-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{s.texto}</span>
+                <button onClick={() => setSubs(subs.filter((_, k) => k !== idx))} className="text-slate-400">✕</button>
+              </div>
+            ))}
+            <div className="flex gap-2">
+              <input value={novaSub} onChange={(e) => setNovaSub(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && novaSub.trim()) { setSubs([...subs, { texto: novaSub.trim(), feito: false }]); setNovaSub(""); } }}
+                placeholder="Adicionar passo…"
+                className="flex-1 rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400" />
+              <button onClick={() => { if (novaSub.trim()) { setSubs([...subs, { texto: novaSub.trim(), feito: false }]); setNovaSub(""); } }}
+                className="rounded-lg bg-indigo-50 px-3 text-indigo-700">+</button>
+            </div>
+          </div>
         </div>
 
         <input value={gatilho} onChange={(e) => setGatilho(e.target.value)}
