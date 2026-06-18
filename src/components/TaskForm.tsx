@@ -57,6 +57,7 @@ export default function TaskForm({
   const [subs, setSubs] = useState<Subtarefa[]>(bloco?.subtarefas || []);
   const [novaSub, setNovaSub] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
 
   const repete = dias.length > 0;
   function toggleDia(i: number) {
@@ -67,11 +68,13 @@ export default function TaskForm({
   }
 
   async function salvar() {
-    if (!titulo || !hora) return;
+    if (!titulo || !hora) { setErro("Preencha o nome e o horário."); return; }
+    if (duracao <= 0) { setErro("A duração precisa ser maior que zero."); return; }
     setSalvando(true);
+    setErro("");
     const supabase = criarClienteBrowser();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSalvando(false); return; }
+    if (!user) { setErro("Sessão expirada. Saia e entre de novo."); setSalvando(false); return; }
 
     const base = edicao ? new Date(bloco!.hora_inicio) : new Date();
     const [h, m] = hora.split(":").map(Number);
@@ -92,12 +95,16 @@ export default function TaskForm({
       notificado: false,
     };
 
+    let error = null;
     if (edicao) {
-      await supabase.from("blocks").update(dados).eq("id", bloco!.id);
+      const r = await supabase.from("blocks").update(dados).eq("id", bloco!.id);
+      error = r.error;
     } else {
-      await supabase.from("blocks").insert({ ...dados, user_id: user.id, data: dataLocal(base) });
+      const r = await supabase.from("blocks").insert({ ...dados, user_id: user.id, data: dataLocal(base) });
+      error = r.error;
     }
     setSalvando(false);
+    if (error) { setErro(error.message); return; }
     onSalvo();
   }
 
@@ -209,6 +216,8 @@ export default function TaskForm({
         <input value={gatilho} onChange={(e) => setGatilho(e.target.value)}
           placeholder='Gatilho (ex.: "se são 9h, então abro a planilha")'
           className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400" />
+
+        {erro && <p className="text-sm text-red-600">{erro}</p>}
 
         <div className="flex gap-2 pt-1">
           <button onClick={salvar} disabled={salvando}
