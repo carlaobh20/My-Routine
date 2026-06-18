@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { criarClienteBrowser } from "@/lib/supabase/client";
+import { ICONES, IconeAtividade } from "@/lib/icones";
 
 const CATEGORIAS = [
   { nome: "Trabalho", cor: "#4f46e5" },
@@ -10,8 +11,6 @@ const CATEGORIAS = [
   { nome: "Estudo", cor: "#d97706" },
   { nome: "Outro", cor: "#64748b" },
 ];
-
-const ICONES = ["📖", "💼", "🏋️", "🧘", "🍽️", "💻", "📞", "🛒", "🚶", "🎯", "☕", "📝", "🙏", "🛏️", "🎨", "🎵"];
 
 const DIAS = [
   { i: 1, l: "Seg" }, { i: 2, l: "Ter" }, { i: 3, l: "Qua" },
@@ -57,7 +56,6 @@ export default function TaskForm({
   const [subs, setSubs] = useState<Subtarefa[]>(bloco?.subtarefas || []);
   const [novaSub, setNovaSub] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState("");
 
   const repete = dias.length > 0;
   function toggleDia(i: number) {
@@ -68,13 +66,11 @@ export default function TaskForm({
   }
 
   async function salvar() {
-    if (!titulo || !hora) { setErro("Preencha o nome e o horário."); return; }
-    if (duracao <= 0) { setErro("A duração precisa ser maior que zero."); return; }
+    if (!titulo || !hora) return;
     setSalvando(true);
-    setErro("");
     const supabase = criarClienteBrowser();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setErro("Sessão expirada. Saia e entre de novo."); setSalvando(false); return; }
+    if (!user) { setSalvando(false); return; }
 
     const base = edicao ? new Date(bloco!.hora_inicio) : new Date();
     const [h, m] = hora.split(":").map(Number);
@@ -95,16 +91,12 @@ export default function TaskForm({
       notificado: false,
     };
 
-    let error = null;
     if (edicao) {
-      const r = await supabase.from("blocks").update(dados).eq("id", bloco!.id);
-      error = r.error;
+      await supabase.from("blocks").update(dados).eq("id", bloco!.id);
     } else {
-      const r = await supabase.from("blocks").insert({ ...dados, user_id: user.id, data: dataLocal(base) });
-      error = r.error;
+      await supabase.from("blocks").insert({ ...dados, user_id: user.id, data: dataLocal(base) });
     }
     setSalvando(false);
-    if (error) { setErro(error.message); return; }
     onSalvo();
   }
 
@@ -140,10 +132,10 @@ export default function TaskForm({
         <div>
           <p className="mb-2 text-sm font-semibold text-slate-600">Ícone</p>
           <div className="flex flex-wrap gap-1.5">
-            {ICONES.map((e) => (
-              <button key={e} onClick={() => setIcone(icone === e ? "" : e)}
-                className={`h-10 w-10 rounded-xl text-lg transition ${icone === e ? "bg-indigo-100 ring-2 ring-indigo-400" : "bg-slate-50"}`}>
-                {e}
+            {ICONES.map((ic) => (
+              <button key={ic.k} onClick={() => setIcone(icone === ic.k ? "" : ic.k)}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${icone === ic.k ? "bg-indigo-100 ring-2 ring-indigo-400" : "bg-slate-50"}`}>
+                <IconeAtividade nome={ic.k} cor={icone === ic.k ? categoria.cor : "#64748b"} size={20} />
               </button>
             ))}
           </div>
@@ -216,8 +208,6 @@ export default function TaskForm({
         <input value={gatilho} onChange={(e) => setGatilho(e.target.value)}
           placeholder='Gatilho (ex.: "se são 9h, então abro a planilha")'
           className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400" />
-
-        {erro && <p className="text-sm text-red-600">{erro}</p>}
 
         <div className="flex gap-2 pt-1">
           <button onClick={salvar} disabled={salvando}

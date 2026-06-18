@@ -8,6 +8,8 @@ import PushManager from "@/components/PushManager";
 import FocusMode from "@/components/FocusMode";
 import ShutdownRitual from "@/components/ShutdownRitual";
 import HorariosForm from "@/components/HorariosForm";
+import { SeloAtividade } from "@/lib/icones";
+import { Home as IcHome, CalendarDays, TrendingUp, BarChart3, Settings, Plus, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 
 type Bloco = BlocoEdit;
 type ExecHist = { block_id: string; status: string; data: string; minutos_cumpridos: number };
@@ -246,6 +248,7 @@ export default function Home() {
   const acompanhamento = useMemo(() => {
     const hojeStr = dataLocal();
     const linhas = todos
+      .filter((b) => b.dias_semana && b.dias_semana.length > 0)
       .filter((b) => semana.some((dia) => apareceEm(b, dia)))
       .map((b) => {
         const celulas = semana.map((dia) => {
@@ -326,13 +329,16 @@ export default function Home() {
         <div key={b.id} className="relative mb-3 flex items-start gap-3">
           <div className="w-10 pt-3 text-right text-xs font-bold text-slate-500">{hhmmDe(i)}</div>
           <div className="z-10 mt-4 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-white" style={{ backgroundColor: cor }} />
-          <button onClick={() => setForm(b)} className="flex-1 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99]"
+          <button onClick={() => setForm(b)} className="flex flex-1 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99]"
             style={ativo ? { border: "2px solid #4f46e5" } : { borderLeft: `4px solid ${cor}` }}>
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-900">{b.icone ? b.icone + " " : ""}{b.titulo}</span>
-              {ativo ? <span className="text-xs font-bold text-indigo-600">agora</span> : <span className="text-slate-300">✎</span>}
+            <SeloAtividade nome={b.icone} cor={cor} size={36} />
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-900">{b.titulo}</span>
+                {ativo ? <span className="text-xs font-bold text-indigo-600">agora</span> : <Pencil size={14} className="text-slate-300" />}
+              </div>
+              <p className="text-xs text-slate-500">{b.duracao_min} min · {b.categoria}</p>
             </div>
-            <p className="text-xs text-slate-500">{b.duracao_min} min · {b.categoria}</p>
           </button>
         </div>);
       cursor = f;
@@ -355,7 +361,7 @@ export default function Home() {
             <h1 className="text-2xl font-bold text-slate-900">{saudacao}</h1>
             <p className="text-sm capitalize text-slate-500">{dataExtenso}</p>
           </div>
-          <button onClick={() => setAjustes(true)} className="text-2xl text-slate-400 hover:text-slate-700">⚙</button>
+          <button onClick={() => setAjustes(true)} className="text-slate-400 hover:text-slate-700"><Settings size={24} /></button>
         </header>
 
         {aba === "hoje" && (
@@ -407,12 +413,15 @@ export default function Home() {
                       <div className="w-1.5 shrink-0" style={{ backgroundColor: cor }} />
                       <div className="flex-1 p-4">
                         <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-semibold text-slate-900">{b.icone ? b.icone + " " : ""}{b.titulo}</p>
-                            <p className="text-sm text-slate-500">{hhmmDe(i)} · {b.duracao_min} min {st.atual > 0 && <span className="ml-1 text-orange-500">🔥 {st.atual}</span>}</p>
+                          <div className="flex items-center gap-3">
+                            <SeloAtividade nome={b.icone} cor={cor} size={40} />
+                            <div>
+                              <p className="font-semibold text-slate-900">{b.titulo}</p>
+                              <p className="text-sm text-slate-500">{hhmmDe(i)} · {b.duracao_min} min {st.atual > 0 && <span className="ml-1 text-orange-500">🔥 {st.atual}</span>}</p>
+                            </div>
                           </div>
                           {ativo ? <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">faltam {restante} min</span>
-                            : <button onClick={() => setForm(b)} className="text-slate-300 hover:text-slate-600">✎</button>}
+                            : <button onClick={() => setForm(b)} className="text-slate-300 hover:text-slate-600"><Pencil size={16} /></button>}
                         </div>
 
                         {subs.length > 0 && (
@@ -525,7 +534,7 @@ export default function Home() {
                     const st = calcStreak(b, feitosPorBloco[b.id] || new Set());
                     return (
                       <div key={b.id} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700">{b.icone ? b.icone + " " : ""}{b.titulo}</span>
+                        <span className="flex items-center gap-2 text-slate-700"><SeloAtividade nome={b.icone} cor={b.cor || "#64748b"} size={24} />{b.titulo}</span>
                         <span className="text-slate-500">🔥 {st.atual} <span className="text-slate-300">· recorde {st.recorde}</span></span>
                       </div>
                     );
@@ -555,14 +564,14 @@ export default function Home() {
           <>
             <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
               <div className="mb-4 flex items-center justify-between">
-                <button onClick={() => setSemanaOffset((o) => o - 1)} className="rounded-lg bg-slate-50 px-3 py-1 text-slate-500">‹</button>
+                <button onClick={() => setSemanaOffset((o) => o - 1)} className="rounded-lg bg-slate-50 px-3 py-2 text-slate-500"><ChevronLeft size={18} /></button>
                 <div className="text-center">
                   <p className="text-sm font-bold text-slate-900">
                     {semana[0].toLocaleDateString("pt-BR", { day: "numeric", month: "short" })} – {semana[6].toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}
                   </p>
                   <p className="text-xs text-slate-400">{semanaOffset === 0 ? "esta semana" : semanaOffset === -1 ? "semana passada" : ""}</p>
                 </div>
-                <button onClick={() => setSemanaOffset((o) => o + 1)} className="rounded-lg bg-slate-50 px-3 py-1 text-slate-500">›</button>
+                <button onClick={() => setSemanaOffset((o) => o + 1)} className="rounded-lg bg-slate-50 px-3 py-2 text-slate-500"><ChevronRight size={18} /></button>
               </div>
 
               <div className="mb-4 flex items-center gap-4 rounded-2xl bg-indigo-50 p-4">
@@ -581,7 +590,7 @@ export default function Home() {
                   </div>
                   {acompanhamento.linhas.map((l) => (
                     <div key={l.bloco.id} className="flex items-center gap-1">
-                      <div className="w-[92px] truncate pr-1 text-xs font-medium text-slate-700">{l.bloco.icone ? l.bloco.icone + " " : ""}{l.bloco.titulo}</div>
+                      <div className="w-[92px] truncate pr-1 text-xs font-medium text-slate-700">{l.bloco.titulo}</div>
                       {l.celulas.map((c, k) => {
                         const cls =
                           c.estado === "cumprido" ? "bg-emerald-500 text-white"
@@ -616,10 +625,10 @@ export default function Home() {
                 <div className="space-y-3">
                   {acompanhamento.linhas.map((l) => (
                     <div key={l.bloco.id}>
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="text-slate-700">{l.bloco.icone ? l.bloco.icone + " " : ""}{l.bloco.titulo}</span>
+                      <button onClick={() => setForm(l.bloco)} className="mb-1 flex w-full items-center justify-between text-left text-sm">
+                        <span className="flex items-center gap-2 text-slate-700"><SeloAtividade nome={l.bloco.icone} cor={l.bloco.cor || "#64748b"} size={26} />{l.bloco.titulo}</span>
                         <span className="font-semibold text-slate-900">{l.adesao}%</span>
-                      </div>
+                      </button>
                       <div className="mb-1 h-2 overflow-hidden rounded-full bg-slate-100">
                         <div className="h-full rounded-full bg-emerald-500" style={{ width: `${l.adesao}%` }} />
                       </div>
@@ -636,13 +645,13 @@ export default function Home() {
       </div>
 
       <button onClick={() => setForm("novo")}
-        className="fixed bottom-24 right-1/2 z-40 flex h-14 w-14 translate-x-[170px] items-center justify-center rounded-full bg-indigo-600 text-3xl text-white shadow-lg shadow-indigo-300 transition active:scale-95">+</button>
+        className="fixed bottom-24 right-1/2 z-40 flex h-14 w-14 translate-x-[170px] items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-300 transition active:scale-95"><Plus size={28} /></button>
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-slate-200 bg-white/90 py-3 backdrop-blur">
-        <button onClick={() => setAba("hoje")} className={`flex-1 text-center text-xs font-medium ${aba === "hoje" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">◴</div>Hoje</button>
-        <button onClick={() => setAba("meudia")} className={`flex-1 text-center text-xs font-medium ${aba === "meudia" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">▤</div>Meu dia</button>
-        <button onClick={() => setAba("progresso")} className={`flex-1 text-center text-xs font-medium ${aba === "progresso" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">📈</div>Progresso</button>
-        <button onClick={() => setAba("semana")} className={`flex-1 text-center text-xs font-medium ${aba === "semana" ? "text-indigo-600" : "text-slate-400"}`}><div className="text-lg">📊</div>Acompanhar</button>
+        <button onClick={() => setAba("hoje")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "hoje" ? "text-indigo-600" : "text-slate-400"}`}><IcHome size={20} />Hoje</button>
+        <button onClick={() => setAba("meudia")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "meudia" ? "text-indigo-600" : "text-slate-400"}`}><CalendarDays size={20} />Meu dia</button>
+        <button onClick={() => setAba("progresso")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "progresso" ? "text-indigo-600" : "text-slate-400"}`}><TrendingUp size={20} />Progresso</button>
+        <button onClick={() => setAba("semana")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "semana" ? "text-indigo-600" : "text-slate-400"}`}><BarChart3 size={20} />Acompanhar</button>
       </nav>
 
       {form && <TaskForm bloco={form === "novo" ? null : form} onFechar={() => setForm(null)} onSalvo={() => { setForm(null); carregar(); }} />}
