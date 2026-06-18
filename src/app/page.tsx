@@ -660,12 +660,13 @@ export default function Home() {
         )}
       </div>
 
-      <button onClick={() => setForm("novo")}
-        className="fixed bottom-24 right-1/2 z-40 flex h-14 w-14 translate-x-[170px] items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-300 transition active:scale-95 dark:shadow-none"><Plus size={28} /></button>
-
-      <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t border-slate-200 bg-white/90 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center border-t border-slate-200 bg-white/90 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
         <button onClick={() => setAba("hoje")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "hoje" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}><IcHome size={20} />Hoje</button>
         <button onClick={() => setAba("meudia")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "meudia" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}><CalendarDays size={20} />Meu dia</button>
+        <div className="flex flex-1 justify-center">
+          <button onClick={() => setForm("novo")} aria-label="Nova atividade"
+            className="-mt-9 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-300/60 ring-4 ring-white transition active:scale-95 dark:shadow-none dark:ring-slate-900"><Plus size={26} /></button>
+        </div>
         <button onClick={() => setAba("progresso")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "progresso" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}><TrendingUp size={20} />Progresso</button>
         <button onClick={() => setAba("semana")} className={`flex flex-1 flex-col items-center gap-1 text-xs font-medium ${aba === "semana" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}><BarChart3 size={20} />Acompanhar</button>
       </nav>
