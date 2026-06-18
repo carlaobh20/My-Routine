@@ -7,6 +7,7 @@ import TaskForm, { BlocoEdit } from "@/components/TaskForm";
 import PushManager from "@/components/PushManager";
 import FocusMode from "@/components/FocusMode";
 import ShutdownRitual from "@/components/ShutdownRitual";
+import HorariosForm from "@/components/HorariosForm";
 
 type Bloco = BlocoEdit;
 type ExecHist = { block_id: string; status: string; data: string; minutos_cumpridos: number };
@@ -76,6 +77,8 @@ export default function Home() {
   const [ajustes, setAjustes] = useState(false);
   const [foco, setFoco] = useState<Bloco | null>(null);
   const [encerrar, setEncerrar] = useState(false);
+  const [perfil, setPerfil] = useState<{ hora_acordar: string | null; hora_dormir: string | null } | null>(null);
+  const [editarHorarios, setEditarHorarios] = useState(false);
 
   async function carregar() {
     const supabase = criarClienteBrowser();
@@ -85,8 +88,11 @@ export default function Home() {
     const desde = dataLocal(new Date(Date.now() - 120 * 86400000));
     const { data: hs } = await supabase
       .from("executions").select("block_id,status,data,minutos_cumpridos").gte("data", desde);
+    const { data: prof } = await supabase
+      .from("profiles").select("hora_acordar,hora_dormir").maybeSingle();
     setTodos(bs ?? []);
     setHist((hs ?? []) as ExecHist[]);
+    setPerfil(prof ?? { hora_acordar: null, hora_dormir: null });
   }
 
   useEffect(() => {
@@ -304,6 +310,13 @@ export default function Home() {
             ) : (
               <div className="relative">
                 <div className="absolute bottom-2 left-[58px] top-2 w-0.5 bg-slate-200" />
+                {perfil?.hora_acordar && (
+                  <div className="relative mb-3 flex items-center gap-3">
+                    <div className="w-10 text-right text-xs font-bold text-slate-400">{perfil.hora_acordar}</div>
+                    <div className="z-10 h-2.5 w-2.5 shrink-0 rounded-full bg-amber-300 ring-4 ring-white" />
+                    <div className="flex-1 text-sm font-medium text-slate-400">🌅 Acordar</div>
+                  </div>
+                )}
                 {blocos.map((b, idx) => {
                   const i = inicioHoje(b, agora); const f = new Date(i.getTime() + b.duracao_min * 60000);
                   const ativo = agora >= i && agora < f; const cor = b.cor || "#64748b";
@@ -326,6 +339,13 @@ export default function Home() {
                   );
                 })}
                 {idxProximo === -1 && <LinhaAgora />}
+                {perfil?.hora_dormir && (
+                  <div className="relative flex items-center gap-3">
+                    <div className="w-10 text-right text-xs font-bold text-slate-400">{perfil.hora_dormir}</div>
+                    <div className="z-10 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-300 ring-4 ring-white" />
+                    <div className="flex-1 text-sm font-medium text-slate-400">🌙 Dormir</div>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -412,6 +432,15 @@ export default function Home() {
       {form && <TaskForm bloco={form === "novo" ? null : form} onFechar={() => setForm(null)} onSalvo={() => { setForm(null); carregar(); }} />}
       {foco && <FocusMode titulo={foco.titulo} duracaoMin={foco.duracao_min} onFechar={() => setFoco(null)} />}
       {encerrar && <ShutdownRitual total={resumo.total} feitos={resumo.feitos} onFechar={() => setEncerrar(false)} />}
+      {((perfil && (!perfil.hora_acordar || !perfil.hora_dormir)) || editarHorarios) && (
+        <HorariosForm
+          acordar={perfil?.hora_acordar || ""}
+          dormir={perfil?.hora_dormir || ""}
+          primeiraVez={!editarHorarios}
+          onFechar={() => setEditarHorarios(false)}
+          onSalvo={() => { setEditarHorarios(false); carregar(); }}
+        />
+      )}
 
       {ajustes && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center" onClick={() => setAjustes(false)}>
@@ -423,6 +452,14 @@ export default function Home() {
             <div>
               <p className="mb-2 text-sm font-semibold text-slate-600">Notificações</p>
               <PushManager />
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-semibold text-slate-600">Seu dia</p>
+              <button onClick={() => { setAjustes(false); setEditarHorarios(true); }}
+                className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm">
+                <span className="text-slate-600">Acordar / dormir</span>
+                <span className="font-medium text-slate-900">🌅 {perfil?.hora_acordar || "—"} · 🌙 {perfil?.hora_dormir || "—"}</span>
+              </button>
             </div>
             <button onClick={async () => { const s = criarClienteBrowser(); await s.auth.signOut(); router.push("/login"); }}
               className="w-full rounded-xl bg-slate-100 px-4 py-3 font-medium text-slate-600">Sair</button>
