@@ -12,15 +12,22 @@ export default function HorariosForm({
   const [a, setA] = useState(acordar || "07:00");
   const [d, setD] = useState(dormir || "23:00");
   const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
 
   async function salvar() {
     setSalvando(true);
+    setErro("");
     const s = criarClienteBrowser();
     const { data: { user } } = await s.auth.getUser();
-    if (user) {
-      await s.from("profiles").update({ hora_acordar: a, hora_dormir: d }).eq("id", user.id);
-    }
+    if (!user) { setErro("Sessão expirada. Saia e entre de novo."); setSalvando(false); return; }
+
+    const { error } = await s.from("profiles").upsert(
+      { id: user.id, hora_acordar: a, hora_dormir: d },
+      { onConflict: "id" },
+    );
+
     setSalvando(false);
+    if (error) { setErro(error.message); return; }
     onSalvo();
   }
 
@@ -40,14 +47,15 @@ export default function HorariosForm({
           <label className="flex-1 space-y-1">
             <span className="text-xs font-semibold text-slate-500">🌅 Acordar</span>
             <input type="time" value={a} onChange={(e) => setA(e.target.value)}
-              className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
+              className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 focus:ring-2 focus:ring-indigo-400" />
           </label>
           <label className="flex-1 space-y-1">
             <span className="text-xs font-semibold text-slate-500">🌙 Dormir</span>
             <input type="time" value={d} onChange={(e) => setD(e.target.value)}
-              className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
+              className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 focus:ring-2 focus:ring-indigo-400" />
           </label>
         </div>
+        {erro && <p className="text-sm text-red-600">{erro}</p>}
         <button onClick={salvar} disabled={salvando}
           className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50">
           {salvando ? "Salvando…" : "Salvar"}
