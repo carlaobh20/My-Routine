@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -141,4 +140,96 @@ export default function TaskForm({
         <div>
           <p className="mb-2 text-sm font-semibold text-slate-600">Ícone</p>
           <div className="flex flex-wrap gap-1.5">
-            {ICONES.map((e)
+            {ICONES.map((e) => (
+              <button key={e} onClick={() => setIcone(icone === e ? "" : e)}
+                className={`h-10 w-10 rounded-xl text-lg transition ${icone === e ? "bg-indigo-100 ring-2 ring-indigo-400" : "bg-slate-50"}`}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Início</span>
+            <input type="time" value={hora} onChange={(e) => setHora(e.target.value)}
+              className="block rounded-xl border-0 bg-slate-50 px-4 py-3 focus:ring-2 focus:ring-indigo-400" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-semibold text-slate-500">Duração</span>
+            <span className="flex items-center gap-1">
+              <select value={Math.floor(duracao / 60)} onChange={(e) => setDuracao(Number(e.target.value) * 60 + (duracao % 60))}
+                className="rounded-xl border-0 bg-slate-50 px-3 py-3 focus:ring-2 focus:ring-indigo-400">
+                {Array.from({ length: 13 }, (_, n) => <option key={n} value={n}>{n}h</option>)}
+              </select>
+              <select value={duracao % 60} onChange={(e) => setDuracao(Math.floor(duracao / 60) * 60 + Number(e.target.value))}
+                className="rounded-xl border-0 bg-slate-50 px-3 py-3 focus:ring-2 focus:ring-indigo-400">
+                {[0, 5, 10, 15, 20, 30, 40, 45, 50].map((m) => <option key={m} value={m}>{m}min</option>)}
+              </select>
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-slate-600">Repete em</p>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <button onClick={() => setDias([])} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${!repete ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>Só hoje</button>
+            <button onClick={() => setDias(UTEIS)} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${mesmoConjunto(dias, UTEIS) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>Dias úteis</button>
+            <button onClick={() => setDias(TODOS)} className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${mesmoConjunto(dias, TODOS) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>Todos os dias</button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {DIAS.map((d) => (
+              <button key={d.i} onClick={() => toggleDia(d.i)}
+                className={`h-9 w-11 rounded-lg text-xs font-semibold transition ${dias.includes(d.i) ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}>{d.l}</button>
+            ))}
+          </div>
+          {repete && (
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-sm text-slate-500">Termina em</span>
+              <input type="date" value={terminaEm} onChange={(e) => setTerminaEm(e.target.value)}
+                className="rounded-xl border-0 bg-slate-50 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400" />
+              {terminaEm && <button onClick={() => setTerminaEm("")} className="text-xs text-slate-400 underline">sem data</button>}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-slate-600">Subtarefas</p>
+          <div className="space-y-2">
+            {subs.map((s, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="flex-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{s.texto}</span>
+                <button onClick={() => setSubs(subs.filter((_, k) => k !== idx))} className="text-slate-400">✕</button>
+              </div>
+            ))}
+            <div className="flex gap-2">
+              <input value={novaSub} onChange={(e) => setNovaSub(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && novaSub.trim()) { setSubs([...subs, { texto: novaSub.trim(), feito: false }]); setNovaSub(""); } }}
+                placeholder="Adicionar passo…"
+                className="flex-1 rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400" />
+              <button onClick={() => { if (novaSub.trim()) { setSubs([...subs, { texto: novaSub.trim(), feito: false }]); setNovaSub(""); } }}
+                className="rounded-lg bg-indigo-50 px-3 text-indigo-700">+</button>
+            </div>
+          </div>
+        </div>
+
+        <input value={gatilho} onChange={(e) => setGatilho(e.target.value)}
+          placeholder='Gatilho (ex.: "se são 9h, então abro a planilha")'
+          className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400" />
+
+        {erro && <p className="text-sm text-red-600">{erro}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={salvar} disabled={salvando}
+            className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500 active:scale-[0.99] disabled:opacity-50">
+            {salvando ? "Salvando…" : "Salvar"}
+          </button>
+          {edicao && (
+            <button onClick={excluir} disabled={salvando}
+              className="rounded-xl bg-red-50 px-5 py-3 font-semibold text-red-600 transition hover:bg-red-100">Excluir</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
