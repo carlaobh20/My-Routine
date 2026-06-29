@@ -288,6 +288,10 @@ export default function Home() {
     const linhas = todos
       .filter((b) => b.dias_semana && b.dias_semana.length > 0)
       .filter((b) => semana.some((dia) => apareceEm(b, dia)))
+      .sort((a, b) => {
+        const ta = new Date(a.hora_inicio); const tb = new Date(b.hora_inicio);
+        return ta.getHours() * 60 + ta.getMinutes() - (tb.getHours() * 60 + tb.getMinutes());
+      })
       .map((b) => {
         const celulas = semana.map((dia) => {
           const ds = dataLocal(dia);
