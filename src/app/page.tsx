@@ -91,8 +91,9 @@ export default function Home() {
   const [ajustes, setAjustes] = useState(false);
   const [foco, setFoco] = useState<Bloco | null>(null);
   const [encerrar, setEncerrar] = useState(false);
-  const [perfil, setPerfil] = useState<{ hora_acordar: string | null; hora_dormir: string | null } | null>(null);
+  const [perfil, setPerfil] = useState<{ hora_acordar: string | null; hora_dormir: string | null; estatisticas_desde: string | null } | null>(null);
   const [editarHorarios, setEditarHorarios] = useState(false);
+  const [confirmarApagar, setConfirmarApagar] = useState(false);
   const [tema, setTema] = useState<"claro" | "escuro">("claro");
 
   useEffect(() => {
@@ -113,11 +114,11 @@ export default function Home() {
       .select("id,titulo,hora_inicio,duracao_min,categoria,cor,data,gatilho,validade_tipo,validade_ate,dias_semana,icone,subtarefas");
     const desde = dataLocal(new Date(Date.now() - 120 * 86400000));
     const { data: hs } = await supabase.from("executions").select("block_id,status,data,minutos_cumpridos").gte("data", desde);
-    const { data: prof } = await supabase.from("profiles").select("hora_acordar,hora_dormir").maybeSingle();
+    const { data: prof } = await supabase.from("profiles").select("hora_acordar,hora_dormir,estatisticas_desde").maybeSingle();
     const { data: ib } = await supabase.from("inbox_items").select("id,texto").order("criado_em");
     setTodos(bs ?? []);
     setHist((hs ?? []) as ExecHist[]);
-    setPerfil(prof ?? { hora_acordar: null, hora_dormir: null });
+    setPerfil(prof ?? { hora_acordar: null, hora_dormir: null, estatisticas_desde: null });
     setInbox((ib ?? []) as InboxItem[]);
   }
 
@@ -191,6 +192,25 @@ export default function Home() {
     carregar();
   }
 
+  async function definirEstatDesde(data: string | null) {
+    const supabase = criarClienteBrowser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("profiles").upsert({ id: user.id, estatisticas_desde: data }, { onConflict: "id" });
+    carregar();
+  }
+
+  async function apagarHistorico() {
+    const supabase = criarClienteBrowser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("executions").delete().eq("user_id", user.id);
+    await supabase.from("profiles").upsert({ id: user.id, estatisticas_desde: null }, { onConflict: "id" });
+    setConfirmarApagar(false);
+    setAjustes(false);
+    carregar();
+  }
+
   const blocos = useMemo(
     () => todos.filter((b) => apareceEm(b, agora)).sort((a, b) => +inicioHoje(a, agora) - +inicioHoje(b, agora)),
     [todos, agora],
@@ -213,17 +233,23 @@ export default function Home() {
     return { total, pct, atual, proximo, feitos, horasDia: minutosDia / 60 };
   }, [blocos, execsHoje, agora]);
 
-  const xpTotal = useMemo(() => hist.reduce((s, e) => s + (e.minutos_cumpridos || 0), 0), [hist]);
+  const estatisticasDesde = perfil?.estatisticas_desde || null;
+  const histVisivel = useMemo(
+    () => (estatisticasDesde ? hist.filter((e) => e.data >= estatisticasDesde) : hist),
+    [hist, estatisticasDesde],
+  );
+
+  const xpTotal = useMemo(() => histVisivel.reduce((s, e) => s + (e.minutos_cumpridos || 0), 0), [histVisivel]);
   const nivel = Math.floor(xpTotal / 300) + 1;
   const pctNivel = Math.round(((xpTotal % 300) / 300) * 100);
 
   const feitosPorBloco = useMemo(() => {
     const m: Record<string, Set<string>> = {};
-    hist.filter((e) => e.status === "cumprido" || e.status === "parcial").forEach((e) => {
+    histVisivel.filter((e) => e.status === "cumprido" || e.status === "parcial").forEach((e) => {
       (m[e.block_id] = m[e.block_id] || new Set()).add(e.data);
     });
     return m;
-  }, [hist]);
+  }, [histVisivel]);
 
   const ultimos7 = useMemo(() => {
     const arr: { label: string; pct: number; total: number }[] = [];
@@ -232,21 +258,21 @@ export default function Home() {
       const ds = dataLocal(dia);
       const agendados = todos.filter((b) => apareceEm(b, dia));
       const total = agendados.length;
-      const feitos = agendados.filter((b) => hist.some((e) => e.block_id === b.id && e.data === ds && e.status === "cumprido")).length;
+      const feitos = agendados.filter((b) => histVisivel.some((e) => e.block_id === b.id && e.data === ds && e.status === "cumprido")).length;
       arr.push({ label: dia.toLocaleDateString("pt-BR", { weekday: "short" }).slice(0, 3), pct: total ? Math.round((feitos / total) * 100) : 0, total });
     }
     return arr;
-  }, [todos, hist]);
+  }, [todos, histVisivel]);
 
   const porCategoria = useMemo(() => {
     const m: Record<string, number> = {};
-    hist.forEach((e) => {
+    histVisivel.forEach((e) => {
       const b = todos.find((x) => x.id === e.block_id);
       const c = b?.categoria || "Outro";
       m[c] = (m[c] || 0) + (e.minutos_cumpridos || 0);
     });
     return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-  }, [hist, todos]);
+  }, [histVisivel, todos]);
 
   const recorrentes = useMemo(() => todos.filter((b) => b.dias_semana && b.dias_semana.length > 0), [todos]);
 
@@ -266,7 +292,7 @@ export default function Home() {
         const celulas = semana.map((dia) => {
           const ds = dataLocal(dia);
           if (!apareceEm(b, dia)) return { ds, dia, estado: "vazio" as const };
-          const ex = hist.find((e) => e.block_id === b.id && e.data === ds);
+          const ex = histVisivel.find((e) => e.block_id === b.id && e.data === ds);
           if (ex) return { ds, dia, estado: ex.status as "cumprido" | "parcial" | "nao" };
           if (ds < hj) return { ds, dia, estado: "falta" as const };
           if (ds === hj) return { ds, dia, estado: "pendente" as const };
@@ -280,7 +306,7 @@ export default function Home() {
     const totAgendados = linhas.reduce((s, l) => s + l.agendados, 0);
     const totFeitas = linhas.reduce((s, l) => s + l.feitas, 0);
     return { linhas, totAgendados, totFeitas, pct: totAgendados ? Math.round((totFeitas / totAgendados) * 100) : 0 };
-  }, [todos, hist, semana]);
+  }, [todos, histVisivel, semana]);
 
   if (carregando) return <main className="flex min-h-screen items-center justify-center text-slate-400 dark:bg-slate-950 dark:text-slate-500">Carregando…</main>;
 
@@ -334,13 +360,13 @@ export default function Home() {
         <div key={b.id} className="relative mb-3 flex items-start gap-3">
           <div className="w-10 pt-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400">{hhmmDe(i)}</div>
           <div className={`z-10 mt-4 h-2.5 w-2.5 shrink-0 rounded-full ${anelDot}`} style={{ backgroundColor: cor }} />
-          <button onClick={() => setForm(b)} className="flex flex-1 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] dark:bg-slate-800 dark:ring-slate-700/60"
+          <button onClick={() => (ativo ? setFoco(b) : setForm(b))} className="flex flex-1 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm ring-1 ring-slate-100 transition active:scale-[0.99] dark:bg-slate-800 dark:ring-slate-700/60"
             style={ativo ? { border: "2px solid #4f46e5" } : { borderLeft: `4px solid ${cor}` }}>
             <SeloAtividade nome={b.icone} cor={cor} size={36} />
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-slate-900 dark:text-slate-100">{b.titulo}</span>
-                {ativo ? <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">agora</span> : <Pencil size={14} className="text-slate-300 dark:text-slate-500" />}
+                {ativo ? <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">agora ▸</span> : <Pencil size={14} className="text-slate-300 dark:text-slate-500" />}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">{b.duracao_min} min · {b.categoria}</p>
             </div>
@@ -433,14 +459,14 @@ export default function Home() {
                       <div className="w-1.5 shrink-0" style={{ backgroundColor: cor }} />
                       <div className="flex-1 p-4">
                         <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
+                          <button onClick={() => (ativo ? setFoco(b) : setForm(b))} className="flex items-center gap-3 text-left">
                             <SeloAtividade nome={b.icone} cor={cor} size={40} />
                             <div>
                               <p className="font-semibold text-slate-900 dark:text-slate-100">{b.titulo}</p>
                               <p className="text-sm text-slate-500 dark:text-slate-400">{hhmmDe(i)} · {b.duracao_min} min {st.atual > 0 && <span className="ml-1 text-orange-500">🔥 {st.atual}</span>}</p>
                             </div>
-                          </div>
-                          {ativo ? <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">faltam {restante} min</span>
+                          </button>
+                          {ativo ? <button onClick={() => setFoco(b)} className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">faltam {restante} min</button>
                             : <button onClick={() => setForm(b)} className="text-slate-300 hover:text-slate-600 dark:text-slate-500"><Pencil size={16} /></button>}
                         </div>
 
@@ -677,7 +703,9 @@ export default function Home() {
           onFechar={() => setPrefill(null)}
           onSalvo={async () => { if (prefill.inboxId) await removerInbox(prefill.inboxId); setPrefill(null); carregar(); }} />
       )}
-      {foco && <FocusMode titulo={foco.titulo} duracaoMin={foco.duracao_min} onFechar={() => setFoco(null)} />}
+      {foco && <FocusMode titulo={foco.titulo} duracaoMin={foco.duracao_min}
+        fimEm={inicioHoje(foco, agora).getTime() + foco.duracao_min * 60000}
+        onFechar={() => setFoco(null)} />}
       {encerrar && <ShutdownRitual total={resumo.total} feitos={resumo.feitos} onFechar={() => setEncerrar(false)} />}
       {((perfil && (!perfil.hora_acordar || !perfil.hora_dormir)) || editarHorarios) && (
         <HorariosForm acordar={perfil?.hora_acordar || ""} dormir={perfil?.hora_dormir || ""} primeiraVez={!editarHorarios}
@@ -701,6 +729,43 @@ export default function Home() {
               </button>
             </div>
             <div><p className="mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Notificações</p><PushManager /></div>
+            <div>
+              <p className="mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Estatísticas</p>
+              <div className="space-y-2">
+                <label className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700">
+                  <span className="text-slate-600 dark:text-slate-300">Contar a partir de</span>
+                  <input type="date" value={perfil?.estatisticas_desde || ""} max={dataLocal(agora)}
+                    onChange={(e) => definirEstatDesde(e.target.value || null)}
+                    className="rounded-lg border-0 bg-white px-3 py-1.5 text-slate-900 dark:bg-slate-600 dark:text-slate-100" />
+                </label>
+                <div className="flex gap-2">
+                  <button onClick={() => definirEstatDesde(dataLocal(agora))}
+                    className="flex-1 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                    Zerar (contar de hoje)
+                  </button>
+                  {perfil?.estatisticas_desde && (
+                    <button onClick={() => definirEstatDesde(null)}
+                      className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                      Mostrar tudo
+                    </button>
+                  )}
+                </div>
+                {!confirmarApagar ? (
+                  <button onClick={() => setConfirmarApagar(true)}
+                    className="w-full rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 dark:bg-red-950/50 dark:text-red-300">
+                    Apagar todo o histórico…
+                  </button>
+                ) : (
+                  <div className="space-y-2 rounded-xl bg-red-50 p-3 dark:bg-red-950/40">
+                    <p className="text-xs text-red-700 dark:text-red-300">Isto apaga <strong>todos</strong> os registros de cumprimento, sem volta. Tem certeza?</p>
+                    <div className="flex gap-2">
+                      <button onClick={apagarHistorico} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">Sim, apagar tudo</button>
+                      <button onClick={() => setConfirmarApagar(false)} className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-200">Cancelar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
             <div>
               <p className="mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Seu dia</p>
               <button onClick={() => { setAjustes(false); setEditarHorarios(true); }}
